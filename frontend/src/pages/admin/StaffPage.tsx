@@ -1,28 +1,151 @@
-import { Users, Phone, Building2 } from 'lucide-react';
+import { useState } from 'react';
+import { Users, Phone, Building2, Plus, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-
-const MOCK_STAFF = [
-  { id: '1', name: 'Ramesh Kumar', phone: '9876543220', department: 'MCD', active_tasks: 3 },
-  { id: '2', name: 'Suresh Yadav', phone: '9876543221', department: 'MCD', active_tasks: 5 },
-  { id: '3', name: 'Manoj Singh', phone: '9876543222', department: 'PWD', active_tasks: 2 },
-  { id: '4', name: 'Priya Sharma', phone: '9876543223', department: 'DJB', active_tasks: 4 },
-];
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useRegisterAdmin, useDepartments } from '@/hooks/use-admin';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function StaffPage() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const { data: departments = [], isLoading: isLoadingDepts } = useDepartments();
+  const registerAdmin = useRegisterAdmin();
+
+  const [open, setOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    password: '',
+    department_id: '',
+  });
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await registerAdmin.mutateAsync(formData);
+      setOpen(false);
+      setFormData({ name: '', phone: '', password: '', department_id: '' });
+    } catch (error) {
+      // Error handled by hook/interceptor
+    }
+  };
+
+  // For now we still show some mock data if there's no real staff list from backend
+  const MOCK_STAFF = [
+    { id: '1', name: 'Ramesh Kumar', phone: '9876543220', department: 'MCD', active_tasks: 3 },
+    { id: '2', name: 'Suresh Yadav', phone: '9876543221', department: 'MCD', active_tasks: 5 },
+  ];
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Staff Management</h1>
           <p className="text-muted-foreground mt-1">
-            View and manage field staff assignments
+            View and manage department administrators and field staff
           </p>
         </div>
-        <Button>
-          <Users className="mr-2 h-4 w-4" />
-          Add Staff
-        </Button>
+
+        {isSuperAdmin && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Department Admin
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <form onSubmit={handleRegister}>
+                <DialogHeader>
+                  <DialogTitle>Add Department Admin</DialogTitle>
+                  <DialogDescription>
+                    Register a new administrator for a specific department.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="name" className="text-right text-xs">Name</Label>
+                    <Input
+                      id="name"
+                      className="col-span-3"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="e.g. John Doe"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="phone" className="text-right text-xs">Phone</Label>
+                    <Input
+                      id="phone"
+                      className="col-span-3"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="10 digit mobile"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="dept" className="text-right text-xs">Dept</Label>
+                    <div className="col-span-3">
+                      <Select
+                        value={formData.department_id}
+                        onValueChange={(val) => setFormData({ ...formData, department_id: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select Department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {departments.map((dept) => (
+                            <SelectItem key={dept.id} value={dept.id}>
+                              {dept.short_name} - {dept.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="pass" className="text-right text-xs">Pass</Label>
+                    <Input
+                      id="pass"
+                      type="password"
+                      className="col-span-3"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Min 6 characters"
+                      required
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="submit" disabled={registerAdmin.isPending}>
+                    {registerAdmin.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Register Admin
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

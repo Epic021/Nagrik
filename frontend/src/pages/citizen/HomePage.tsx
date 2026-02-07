@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, List, Filter, Search, ChevronUp, MessageSquare } from 'lucide-react';
+import { MapPin, List, Filter, Search, ChevronUp, MessageSquare, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -8,18 +8,17 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge } from '@/components/StatusBadge';
-import { MOCK_COMPLAINTS, CATEGORIES } from '@/data/mockData';
+import { useComplaints, useCategories } from '@/hooks/use-complaints';
 
 export default function HomePage() {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredComplaints = MOCK_COMPLAINTS.filter((complaint) => {
-    const matchesCategory = selectedCategory === 'all' || complaint.category_id === selectedCategory;
-    const matchesSearch = complaint.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      complaint.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+  const { data: categories = [] } = useCategories();
+  const { data: complaints = [], isLoading } = useComplaints({
+    category: selectedCategory === 'all' ? undefined : selectedCategory,
+    search: searchQuery || undefined,
   });
 
   return (
@@ -71,7 +70,7 @@ export default function HomePage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                {CATEGORIES.map((cat) => (
+                {Array.isArray(categories) && categories.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
                     {cat.icon} {cat.name}
                   </SelectItem>
@@ -86,13 +85,17 @@ export default function HomePage() {
       <div className="flex-1 overflow-auto">
         {viewMode === 'list' ? (
           <div className="p-4 space-y-3">
-            {filteredComplaints.map((complaint) => (
+            {isLoading ? (
+              <div className="flex justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : Array.isArray(complaints) && complaints.map((complaint) => (
               <Link key={complaint.id} to={`/citizen/complaints/${complaint.id}`}>
                 <Card className="overflow-hidden hover:shadow-md transition-shadow">
                   <CardContent className="p-0">
                     <div className="flex">
                       {/* Image */}
-                      {complaint.media_urls.length > 0 && (
+                      {complaint.media_urls && complaint.media_urls.length > 0 && (
                         <div className="w-24 h-24 flex-shrink-0">
                           <img
                             src={complaint.media_urls[0]}
@@ -101,7 +104,7 @@ export default function HomePage() {
                           />
                         </div>
                       )}
-                      
+
                       {/* Content */}
                       <div className="flex-1 p-3">
                         <div className="flex items-start justify-between gap-2 mb-1">
@@ -110,21 +113,23 @@ export default function HomePage() {
                           </h3>
                           <StatusBadge status={complaint.status} size="sm" />
                         </div>
-                        
+
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                          <span>{complaint.category?.icon} {complaint.category?.name}</span>
+                          <span>{complaint.category?.icon} {complaint.category?.name || 'Uncategorized'}</span>
                           <span>•</span>
-                          <span>{new Date(complaint.created_at).toLocaleDateString()}</span>
+                          <span>{complaint.created_at ? new Date(complaint.created_at).toLocaleDateString() : 'Unknown date'}</span>
                         </div>
 
                         <div className="flex items-center gap-3 text-xs">
                           <div className="flex items-center gap-1 text-muted-foreground">
                             <MapPin className="h-3 w-3" />
-                            <span className="truncate max-w-[120px]">{complaint.location.address.split(',')[0]}</span>
+                            <span className="truncate max-w-[120px]">
+                              {complaint.location?.address ? complaint.location.address.split(',')[0] : 'Unknown location'}
+                            </span>
                           </div>
                           <div className="flex items-center gap-1 text-primary font-medium">
                             <ChevronUp className="h-3 w-3" />
-                            <span>{complaint.upvotes}</span>
+                            <span>{complaint.upvote_count ?? complaint.upvotes ?? 0}</span>
                           </div>
                         </div>
                       </div>
@@ -134,7 +139,7 @@ export default function HomePage() {
               </Link>
             ))}
 
-            {filteredComplaints.length === 0 && (
+            {!isLoading && (!Array.isArray(complaints) || complaints.length === 0) && (
               <div className="text-center py-12 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
                 <p>No complaints found</p>

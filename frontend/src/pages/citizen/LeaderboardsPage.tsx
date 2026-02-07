@@ -15,7 +15,7 @@ const departmentRankings = [
   { id: 'bses', resolutionRate: 65.4, avgHours: 48, totalResolved: 198 },
 ].map((d) => ({
   ...d,
-  department: DEPARTMENTS.find((dept) => dept.id === d.id),
+  department: Array.isArray(DEPARTMENTS) ? DEPARTMENTS.find((dept) => dept.id === d.id) : undefined,
 }));
 
 const topIssues = [
@@ -26,7 +26,7 @@ const topIssues = [
   { category_id: 'sewage', count: 98, trend: 15 },
 ].map((issue) => ({
   ...issue,
-  category: CATEGORIES.find((c) => c.id === issue.category_id),
+  category: Array.isArray(CATEGORIES) ? CATEGORIES.find((c) => c.id === issue.category_id) : undefined,
 }));
 
 const hotspots = [
@@ -90,7 +90,7 @@ export default function LeaderboardsPage() {
       <div className="p-4">
         {activeTab === 'departments' && (
           <div className="space-y-3">
-            {departmentRankings.map((dept, index) => (
+            {Array.isArray(departmentRankings) && departmentRankings.map((dept, index) => (
               <Card key={dept.id} className={index < 3 ? 'border-primary/30' : ''}>
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
@@ -106,7 +106,7 @@ export default function LeaderboardsPage() {
                           {dept.department?.short_name}
                         </Badge>
                       </div>
-                      
+
                       <div className="space-y-2">
                         <div>
                           <div className="flex items-center justify-between text-xs mb-1">
@@ -115,7 +115,7 @@ export default function LeaderboardsPage() {
                           </div>
                           <Progress value={dept.resolutionRate} className="h-2" />
                         </div>
-                        
+
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           <span>{dept.totalResolved} resolved</span>
                           <span>Avg: {dept.avgHours}h</span>
@@ -131,7 +131,7 @@ export default function LeaderboardsPage() {
 
         {activeTab === 'issues' && (
           <div className="space-y-3">
-            {topIssues.map((issue, index) => (
+            {Array.isArray(topIssues) && topIssues.map((issue, index) => (
               <Card key={issue.category_id}>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
@@ -172,7 +172,7 @@ export default function LeaderboardsPage() {
 
         {activeTab === 'hotspots' && (
           <div className="space-y-3">
-            {hotspots.map((spot, index) => (
+            {Array.isArray(hotspots) && hotspots.map((spot, index) => (
               <Card key={spot.area}>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">

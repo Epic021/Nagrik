@@ -5,12 +5,14 @@ import {
   CheckCircle2,
   TrendingUp,
   Users,
+  Loader2,
 } from 'lucide-react';
 import { StatCard } from '@/components/StatCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
-import { MOCK_DASHBOARD_DATA, MOCK_TRENDS_DATA, MOCK_COMPLAINTS } from '@/data/mockData';
+import { useAdminDashboard, useAdminTrends } from '@/hooks/use-admin';
+import { useComplaints } from '@/hooks/use-complaints';
 import {
   AreaChart,
   Area,
@@ -39,8 +41,20 @@ const STATUS_COLORS: Record<ComplaintStatus, string> = {
 
 export default function DashboardPage() {
   const { user, isSuperAdmin } = useAuth();
-  const data = MOCK_DASHBOARD_DATA;
-  const trends = MOCK_TRENDS_DATA;
+  const { data, isLoading: statsLoading } = useAdminDashboard();
+  const { data: trends, isLoading: trendsLoading } = useAdminTrends();
+  const { data: complaints = [], isLoading: complaintsLoading } = useComplaints({ limit: 5 });
+
+  if (statsLoading || trendsLoading || complaintsLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading dashboard data...</p>
+      </div>
+    );
+  }
+
+  if (!data || !trends) return null;
 
   const pieData = [
     { name: 'Pending', value: data.by_status.pending, status: 'pending' as ComplaintStatus },
@@ -48,15 +62,17 @@ export default function DashboardPage() {
     { name: 'In Progress', value: data.by_status.in_progress, status: 'in_progress' as ComplaintStatus },
     { name: 'Resolved', value: data.by_status.resolved, status: 'resolved' as ComplaintStatus },
     { name: 'Rejected', value: data.by_status.rejected, status: 'rejected' as ComplaintStatus },
-  ];
+  ].filter(item => item.value > 0);
 
-  const trendChartData = trends.new_complaints.map((item, index) => ({
-    date: format(new Date(item.date), 'MMM d'),
-    new: item.count,
-    resolved: trends.resolutions[index]?.count || 0,
-  }));
-
-  const recentComplaints = MOCK_COMPLAINTS.slice(0, 5);
+  const trendChartData = Array.isArray(trends?.new_complaints)
+    ? trends.new_complaints.map((item) => ({
+      date: item.date ? format(new Date(item.date), 'MMM d') : 'Unknown',
+      new: item.count || 0,
+      resolved: Array.isArray(trends.resolutions)
+        ? (trends.resolutions.find(r => r.date === item.date)?.count || 0)
+        : 0,
+    }))
+    : [];
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -66,7 +82,7 @@ export default function DashboardPage() {
         <p className="text-muted-foreground mt-1">
           {isSuperAdmin
             ? 'Overview of all departments'
-            : `${user?.department_id?.toUpperCase() || 'Department'} Overview`}
+            : `${data.department_name || 'Department'} Overview`}
         </p>
       </div>
 
@@ -82,8 +98,7 @@ export default function DashboardPage() {
           title="New Today"
           value={data.summary.today_new}
           icon={<Clock className="h-6 w-6 text-primary" />}
-          trend={{ value: 12, isPositive: false }}
-          description="vs yesterday"
+          description="Created today"
         />
         <StatCard
           title="High Urgency Pending"
@@ -97,8 +112,7 @@ export default function DashboardPage() {
           value={`${data.performance.resolution_rate}%`}
           icon={<CheckCircle2 className="h-6 w-6 text-status-resolved" />}
           iconClassName="bg-status-resolved/10"
-          trend={{ value: 5.2, isPositive: true }}
-          description="This week"
+          description="Overall rate"
         />
       </div>
 
@@ -219,10 +233,10 @@ export default function DashboardPage() {
           <CardContent>
             <div className="h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.top_categories} layout="vertical">
+                <BarChart data={Array.isArray(data.top_categories) ? data.top_categories.map(c => ({ category: c.category?.split(' ')[1] || c.category || 'Other', count: c.count || 0 })) : []} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
                   <XAxis type="number" className="text-xs" />
-                  <YAxis type="category" dataKey="category" className="text-xs" width={100} />
+                  <YAxis type="category" dataKey="category" className="text-xs" width={80} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: 'hsl(var(--card))',
@@ -248,20 +262,24 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentComplaints.map((complaint) => (
+              {Array.isArray(complaints) && complaints.map((complaint) => (
                 <div
                   key={complaint.id}
-                  className="flex items-start gap-4 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                  className="flex items-start gap-4 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
+                  onClick={() => window.location.href = `/admin/complaints/${complaint.id}`}
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{complaint.title}</p>
                     <p className="text-sm text-muted-foreground truncate">
-                      {complaint.location.address}
+                      {complaint.location?.address || 'Unknown address'}
                     </p>
                   </div>
                   <StatusBadge status={complaint.status} />
                 </div>
               ))}
+              {!complaintsLoading && (!Array.isArray(complaints) || complaints.length === 0) && (
+                <p className="text-sm text-muted-foreground text-center py-4">No recent complaints</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -303,6 +321,6 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
-    </div>
+    </div >
   );
 }

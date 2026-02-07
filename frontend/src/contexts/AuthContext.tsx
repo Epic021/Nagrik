@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { User, UserRole } from '@/types';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import { User } from '@/types';
+import api from '@/lib/api';
 
 interface AuthContextType {
   user: User | null;
@@ -11,73 +12,48 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   isCitizen: boolean;
   register: (name: string, phone: string, password: string) => Promise<void>;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Helper function to generate unique citizen ID
-const generateCitizenId = (): string => {
-  return `citizen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-};
-
-// Mock users for demo
-const MOCK_USERS: Record<string, { password: string; user: User }> = {
-  '9999999999': {
-    password: 'admin123',
-    user: {
-      id: 'super-admin-1',
-      name: 'Super Admin',
-      phone: '9999999999',
-      role: 'super_admin',
-    },
-  },
-  '9876543211': {
-    password: 'mcd123',
-    user: {
-      id: 'mcd-admin-1',
-      name: 'MCD Admin',
-      phone: '9876543211',
-      role: 'department_admin',
-      department_id: 'mcd',
-    },
-  },
-  '9876543210': {
-    password: 'citizen123',
-    user: {
-      id: 'citizen-1',
-      name: 'Rahul Kumar',
-      phone: '9876543210',
-      role: 'citizen',
-    },
-  },
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem('nagrik_user');
-    return stored ? JSON.parse(stored) : null;
-  });
-  
-  const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem('nagrik_token');
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('nagrik_token'));
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Initialize auth state
+  useEffect(() => {
+    const initAuth = async () => {
+      const storedToken = localStorage.getItem('nagrik_token');
+      if (storedToken) {
+        try {
+          const response = await api.get('/auth/me');
+          setUser(response.data);
+          setToken(storedToken);
+        } catch (error) {
+          console.error('[AUTH] Failed to restore session:', error);
+          localStorage.removeItem('nagrik_token');
+          localStorage.removeItem('nagrik_user');
+          setToken(null);
+          setUser(null);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    initAuth();
+  }, []);
 
   const login = useCallback(async (phone: string, password: string) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    const response = await api.post('/auth/login', { phone, password });
+    const { access_token, user: userData } = response.data;
 
-    const mockUser = MOCK_USERS[phone];
-    if (!mockUser || mockUser.password !== password) {
-      throw new Error('Invalid phone number or password');
-    }
+    localStorage.setItem('nagrik_token', access_token);
+    localStorage.setItem('nagrik_user', JSON.stringify(userData));
 
-    const mockToken = `mock-token-${Date.now()}`;
-    
-    localStorage.setItem('nagrik_user', JSON.stringify(mockUser.user));
-    localStorage.setItem('nagrik_token', mockToken);
-    
-    setUser(mockUser.user);
-    setToken(mockToken);
+    setUser(userData);
+    setToken(access_token);
   }, []);
 
   const logout = useCallback(() => {
@@ -88,41 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (name: string, phone: string, password: string) => {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    // 1. Register
+    await api.post('/auth/register', { name, phone, password });
 
-    // Check if user already exists
-    if (MOCK_USERS[phone]) {
-      throw new Error('Phone number already registered');
-    }
-
-    // Generate unique citizen ID
-    const citizenId = generateCitizenId();
-    
-    // Create new citizen user
-    const newUser: User = {
-      id: citizenId,
-      name,
-      phone,
-      role: 'citizen',
-    };
-
-    // Store in mock users
-    MOCK_USERS[phone] = {
-      password,
-      user: newUser,
-    };
-
-    // Create mock token
-    const mockToken = `mock-token-${Date.now()}`;
-    
-    // Save to localStorage
-    localStorage.setItem('nagrik_user', JSON.stringify(newUser));
-    localStorage.setItem('nagrik_token', mockToken);
-    
-    setUser(newUser);
-    setToken(mockToken);
-  }, []);
+    // 2. Auto-login after registration
+    await login(phone, password);
+  }, [login]);
 
   const isAdmin = user?.role === 'department_admin' || user?.role === 'super_admin';
   const isSuperAdmin = user?.role === 'super_admin';
@@ -140,9 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSuperAdmin,
         isCitizen,
         register,
+        isLoading
       }}
     >
-      {children}
+      {!isLoading && children}
     </AuthContext.Provider>
   );
 }

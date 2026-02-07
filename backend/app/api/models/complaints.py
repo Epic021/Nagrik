@@ -15,8 +15,9 @@ class ComplaintStatus(str, Enum):
 
 class Urgency(str, Enum):
     LOW = "low"
-    MEDIUM = "medium"
+    NORMAL = "normal"
     HIGH = "high"
+    URGENT = "urgent"
 
 
 class GeoLocation(BaseModel):
@@ -58,7 +59,7 @@ class ComplaintCreate(BaseModel):
     category_id: str
     location: Location
     media_urls: List[str] = Field(default_factory=list, max_length=5)
-    urgency: Urgency = Urgency.MEDIUM
+    urgency: Urgency = Urgency.NORMAL
 
 
 # === Knowledge Graph / AI Integration ===

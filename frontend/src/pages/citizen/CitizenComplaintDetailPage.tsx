@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, ChevronUp, Share2, Clock, User, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, MapPin, ChevronUp, Share2, Clock, User, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,53 +8,58 @@ import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusBadge } from '@/components/StatusBadge';
-import { MOCK_COMPLAINTS, MOCK_COMPLAINT_HISTORY } from '@/data/mockData';
 import { useAuth } from '@/contexts/AuthContext';
+import { useComplaintDetail, useUpvoteComplaint, useVerifyResolution } from '@/hooks/use-complaints';
 import { toast } from 'sonner';
 
 export default function CitizenComplaintDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [hasUpvoted, setHasUpvoted] = useState(false);
-  const [upvoteCount, setUpvoteCount] = useState(0);
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
 
-  const complaint = MOCK_COMPLAINTS.find((c) => c.id === id);
+  const { data: complaint, isLoading } = useComplaintDetail(id);
+  const upvoteMutation = useUpvoteComplaint();
+  const verifyMutation = useVerifyResolution();
 
-  if (!complaint) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-muted-foreground">Complaint not found</p>
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading details...</p>
       </div>
     );
   }
 
-  // Initialize upvote count
-  if (upvoteCount === 0 && complaint.upvotes > 0) {
-    setUpvoteCount(complaint.upvotes);
+  if (!complaint) {
+    return (
+      <div className="flex items-center justify-center h-full py-12">
+        <p className="text-muted-foreground">Complaint not found</p>
+      </div>
+    );
   }
 
   const isOwner = user?.id === complaint.created_by.id;
   const canVerify = isOwner && complaint.status === 'resolved';
 
   const handleUpvote = () => {
-    if (hasUpvoted) {
-      setUpvoteCount((prev) => prev - 1);
-      setHasUpvoted(false);
-      toast.success('Upvote removed');
-    } else {
-      setUpvoteCount((prev) => prev + 1);
-      setHasUpvoted(true);
-      toast.success('Complaint upvoted!');
-    }
+    if (!id) return;
+    upvoteMutation.mutate(id);
   };
 
   const handleVerify = (accepted: boolean) => {
-    toast.success(accepted ? 'Resolution verified! Thank you.' : 'Feedback submitted. Issue will be reopened.');
-    setVerifyDialogOpen(false);
-    setFeedback('');
+    if (!id) return;
+    verifyMutation.mutate({
+      id,
+      accepted,
+      feedback: feedback || undefined
+    }, {
+      onSuccess: () => {
+        setVerifyDialogOpen(false);
+        setFeedback('');
+      }
+    });
   };
 
   const handleShare = async () => {
@@ -94,7 +99,7 @@ export default function CitizenComplaintDetailPage() {
 
       <div className="p-4 space-y-4">
         {/* Media Gallery */}
-        {complaint.media_urls.length > 0 && (
+        {complaint.media_urls && complaint.media_urls.length > 0 && (
           <div className="rounded-xl overflow-hidden">
             <img
               src={complaint.media_urls[0]}
@@ -123,12 +128,13 @@ export default function CitizenComplaintDetailPage() {
         {/* Upvote & Actions */}
         <div className="flex items-center gap-3">
           <Button
-            variant={hasUpvoted ? 'default' : 'outline'}
+            variant="outline"
             className="flex-1"
             onClick={handleUpvote}
+            disabled={upvoteMutation.isPending}
           >
             <ChevronUp className="h-4 w-4 mr-1" />
-            Upvote ({upvoteCount})
+            Upvote ({complaint.upvote_count || 0})
           </Button>
           {canVerify && (
             <Button variant="outline" className="flex-1" onClick={() => setVerifyDialogOpen(true)}>
@@ -161,7 +167,12 @@ export default function CitizenComplaintDetailPage() {
           <CardContent>
             <p className="text-sm text-muted-foreground">{complaint.location.address}</p>
             <div className="mt-3 h-32 bg-muted rounded-lg flex items-center justify-center">
-              <p className="text-xs text-muted-foreground">Map preview</p>
+              <div className="text-center">
+                <MapPin className="h-6 w-6 mx-auto mb-1 opacity-50" />
+                <p className="text-[10px] text-muted-foreground">
+                  {complaint.location.lat.toFixed(4)}, {complaint.location.lng.toFixed(4)}
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -184,23 +195,23 @@ export default function CitizenComplaintDetailPage() {
                 <User className="h-4 w-4" />
                 Reported by
               </span>
-              <span>{complaint.created_by.name}</span>
+              <span>{complaint.created_by?.name || 'Anonymous'}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Department</span>
               <Badge variant="outline">{complaint.department?.short_name}</Badge>
             </div>
-            {complaint.assigned_to_name && (
+            {complaint.assigned_to && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Assigned to</span>
-                <span>{complaint.assigned_to_name}</span>
+                <span>{complaint.assigned_to.name}</span>
               </div>
             )}
           </CardContent>
         </Card>
 
         {/* Resolution (if resolved) */}
-        {complaint.resolved_at && complaint.resolution_notes && (
+        {complaint.status === 'resolved' && complaint.resolution_notes && (
           <Card className="border-status-resolved/30 bg-status-resolved/5">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm text-status-resolved flex items-center gap-2">
@@ -210,42 +221,46 @@ export default function CitizenComplaintDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">{complaint.resolution_notes}</p>
-              <p className="text-xs text-muted-foreground mt-2">
-                Resolved on {new Date(complaint.resolved_at).toLocaleDateString()}
-              </p>
+              {complaint.resolved_at && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Resolved on {new Date(complaint.resolved_at).toLocaleDateString()}
+                </p>
+              )}
             </CardContent>
           </Card>
         )}
 
         {/* Activity Timeline */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {MOCK_COMPLAINT_HISTORY.map((entry, index) => (
-                <div key={index} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className="w-2 h-2 rounded-full bg-primary" />
-                    {index < MOCK_COMPLAINT_HISTORY.length - 1 && (
-                      <div className="w-px h-full bg-border flex-1" />
-                    )}
+        {complaint.history && complaint.history.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {Array.isArray(complaint.history) && complaint.history.map((entry, index) => (
+                  <div key={index} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className="w-2 h-2 rounded-full bg-primary" />
+                      {index < (complaint.history?.length || 0) - 1 && (
+                        <div className="w-px h-full bg-border flex-1" />
+                      )}
+                    </div>
+                    <div className="flex-1 pb-4">
+                      <p className="text-sm font-medium capitalize">{entry.action?.replace('_', ' ') || 'Action'}</p>
+                      {entry.notes && (
+                        <p className="text-xs text-muted-foreground mt-1">{entry.notes}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {entry.by?.name || 'Unknown'} • {entry.created_at ? new Date(entry.created_at).toLocaleString() : 'Unknown date'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 pb-4">
-                    <p className="text-sm font-medium capitalize">{entry.action.replace('_', ' ')}</p>
-                    {entry.notes && (
-                      <p className="text-xs text-muted-foreground mt-1">{entry.notes}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {entry.by.name} • {new Date(entry.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Verify Dialog */}
@@ -267,11 +282,16 @@ export default function CitizenComplaintDetailPage() {
               variant="outline"
               className="flex-1"
               onClick={() => handleVerify(false)}
+              disabled={verifyMutation.isPending}
             >
               <XCircle className="h-4 w-4 mr-1" />
               Not Fixed
             </Button>
-            <Button className="flex-1" onClick={() => handleVerify(true)}>
+            <Button
+              className="flex-1"
+              onClick={() => handleVerify(true)}
+              disabled={verifyMutation.isPending}
+            >
               <CheckCircle className="h-4 w-4 mr-1" />
               Confirm Fixed
             </Button>

@@ -12,6 +12,7 @@ import {
   CheckCircle,
   XCircle,
   ArrowUpRight,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,10 +39,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { StatusBadge, UrgencyBadge } from '@/components/StatusBadge';
-import { MOCK_COMPLAINTS, CATEGORIES } from '@/data/mockData';
-import { ComplaintStatus, UrgencyLevel } from '@/types';
+import { useComplaints } from '@/hooks/use-complaints';
 import { format } from 'date-fns';
 
 export default function ComplaintsListPage() {
@@ -51,22 +51,17 @@ export default function ComplaintsListPage() {
   const [urgencyFilter, setUrgencyFilter] = useState<string>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const filteredComplaints = MOCK_COMPLAINTS.filter((complaint) => {
-    const matchesSearch =
-      complaint.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      complaint.id.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus =
-      statusFilter === 'all' || complaint.status === statusFilter;
-    const matchesUrgency =
-      urgencyFilter === 'all' || complaint.urgency === urgencyFilter;
-    return matchesSearch && matchesStatus && matchesUrgency;
+  const { data: complaints = [], isLoading } = useComplaints({
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    urgency: urgencyFilter === 'all' ? undefined : urgencyFilter,
+    search: searchQuery || undefined,
   });
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === filteredComplaints.length) {
+    if (Array.isArray(complaints) && selectedIds.length === complaints.length) {
       setSelectedIds([]);
-    } else {
-      setSelectedIds(filteredComplaints.map((c) => c.id));
+    } else if (Array.isArray(complaints)) {
+      setSelectedIds(complaints.map((c) => c.id));
     }
   };
 
@@ -74,14 +69,6 @@ export default function ComplaintsListPage() {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
-  };
-
-  const statusCounts = {
-    all: MOCK_COMPLAINTS.length,
-    pending: MOCK_COMPLAINTS.filter((c) => c.status === 'pending').length,
-    assigned: MOCK_COMPLAINTS.filter((c) => c.status === 'assigned').length,
-    in_progress: MOCK_COMPLAINTS.filter((c) => c.status === 'in_progress').length,
-    resolved: MOCK_COMPLAINTS.filter((c) => c.status === 'resolved').length,
   };
 
   return (
@@ -126,9 +113,6 @@ export default function ComplaintsListPage() {
             className="whitespace-nowrap"
           >
             {tab.label}
-            <span className="ml-2 text-xs opacity-70">
-              {statusCounts[tab.value as keyof typeof statusCounts]}
-            </span>
           </Button>
         ))}
       </div>
@@ -173,8 +157,9 @@ export default function ComplaintsListPage() {
                   <TableHead className="w-12">
                     <Checkbox
                       checked={
-                        selectedIds.length === filteredComplaints.length &&
-                        filteredComplaints.length > 0
+                        Array.isArray(complaints) &&
+                        complaints.length > 0 &&
+                        selectedIds.length === complaints.length
                       }
                       onCheckedChange={toggleSelectAll}
                     />
@@ -189,7 +174,15 @@ export default function ComplaintsListPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredComplaints.map((complaint) => (
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="h-32">
+                      <div className="flex justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : Array.isArray(complaints) && complaints.map((complaint) => (
                   <TableRow
                     key={complaint.id}
                     className="cursor-pointer hover:bg-muted/50"
@@ -204,15 +197,14 @@ export default function ComplaintsListPage() {
                     <TableCell>
                       <div className="max-w-[300px]">
                         <p className="font-medium truncate">{complaint.title}</p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground truncate">
                           #{complaint.id}
                         </p>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span>{complaint.category?.icon}</span>
-                        <span className="text-sm">{complaint.category?.name}</span>
+                        <span className="text-sm">{complaint.category?.icon} {complaint.category?.name}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -224,7 +216,7 @@ export default function ComplaintsListPage() {
                     <TableCell>
                       <div className="flex items-center gap-1 text-sm text-muted-foreground max-w-[200px]">
                         <MapPin className="h-3 w-3 flex-shrink-0" />
-                        <span className="truncate">{complaint.location.address}</span>
+                        <span className="truncate">{complaint.location?.address ? complaint.location.address.split(',')[0] : 'Unknown'}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -276,7 +268,7 @@ export default function ComplaintsListPage() {
             </Table>
           </div>
 
-          {filteredComplaints.length === 0 && (
+          {!isLoading && (!Array.isArray(complaints) || complaints.length === 0) && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Search className="h-12 w-12 text-muted-foreground/50 mb-4" />
               <p className="text-lg font-medium">No complaints found</p>

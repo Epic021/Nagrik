@@ -55,6 +55,9 @@ async def classify_from_image(request: ImageClassifyRequest):
             "message": "Please select category manually or configure GEMINI_API_KEY"
         }
     
+    # If Gemini extraction is available, attempt to get location too
+    location_result = await extract_location_from_text(request.description or "")
+    
     return {
         "success": True,
         "category_id": result.get("category_id"),
@@ -62,7 +65,8 @@ async def classify_from_image(request: ImageClassifyRequest):
         "confidence": result.get("confidence", 0),
         "detected_issues": result.get("detected_issues", []),
         "suggested_urgency": result.get("suggested_urgency", "medium"),
-        "ai_description": result.get("ai_description", "")
+        "ai_description": result.get("ai_description", ""),
+        "location": location_result if location_result and location_result.get("has_location") else None
     }
 
 
@@ -85,13 +89,17 @@ async def classify_from_text(request: TextClassifyRequest):
             "message": "Please select category manually or configure GEMINI_API_KEY"
         }
     
+    # If Gemini extraction is available, attempt to get location too
+    location_result = await extract_location_from_text(f"{request.title} {request.description}")
+    
     return {
         "success": True,
         "category_id": result.get("category_id"),
         "category_name": result.get("category_name"),
         "confidence": result.get("confidence", 0),
         "suggested_urgency": result.get("suggested_urgency", "medium"),
-        "reasoning": result.get("reasoning", "")
+        "reasoning": result.get("reasoning", ""),
+        "location": location_result if location_result and location_result.get("has_location") else None
     }
 
 

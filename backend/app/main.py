@@ -97,4 +97,8 @@ async def root():
 @app.get(f"{settings.API_V1_PREFIX}/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    from .api.core.database import is_db_connected
+    return {
+        "status": "healthy",
+        "database": "connected" if is_db_connected() else "disconnected"
+    }

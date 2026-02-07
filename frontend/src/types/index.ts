@@ -43,13 +43,20 @@ export interface Complaint {
   location: Location;
   media_urls: string[];
   upvotes: number;
+  upvote_count?: number;
   created_at: string;
   updated_at: string;
   created_by: User;
   assigned_to_name?: string;
   assigned_to_phone?: string;
+  assigned_to?: {
+    name: string;
+    phone?: string;
+    assigned_at: string;
+  };
   resolved_at?: string;
   resolution_notes?: string;
+  history?: ComplaintHistory[];
 }
 
 export interface ComplaintHistory {
@@ -89,6 +96,7 @@ export interface TopCategory {
 
 export interface DashboardData {
   department_id?: string;
+  department_name?: string;
   summary: DashboardSummary;
   by_status: DashboardByStatus;
   performance: DashboardPerformance;

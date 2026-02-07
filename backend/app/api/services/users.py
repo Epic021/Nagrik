@@ -101,5 +101,6 @@ def user_doc_to_response(user_doc: dict) -> UserResponse:
         phone=user_doc["phone"],
         email=user_doc.get("email"),
         role=UserRole(user_doc["role"]),
+        department_id=user_doc.get("department_id"),
         created_at=user_doc["created_at"]
     )

@@ -1,20 +1,19 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, ChevronRight, MapPin, Clock } from 'lucide-react';
+import { FileText, ChevronRight, MapPin, Clock, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatusBadge } from '@/components/StatusBadge';
-import { MOCK_COMPLAINTS } from '@/data/mockData';
-import { ComplaintStatus } from '@/types';
+import { useMyComplaints } from '@/hooks/use-complaints';
 
 export default function MyComplaintsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'resolved'>('all');
+  const { data: myComplaints = [], isLoading } = useMyComplaints();
 
-  // Simulate user's complaints (in real app, filter by user ID)
-  const myComplaints = MOCK_COMPLAINTS.slice(0, 5);
+  const complaintsArray = Array.isArray(myComplaints) ? myComplaints : [];
 
-  const filteredComplaints = myComplaints.filter((complaint) => {
+  const filteredComplaints = complaintsArray.filter((complaint) => {
     if (activeTab === 'all') return true;
     if (activeTab === 'active') {
       return ['pending', 'assigned', 'in_progress'].includes(complaint.status);
@@ -23,9 +22,9 @@ export default function MyComplaintsPage() {
   });
 
   const statusCounts = {
-    all: myComplaints.length,
-    active: myComplaints.filter((c) => ['pending', 'assigned', 'in_progress'].includes(c.status)).length,
-    resolved: myComplaints.filter((c) => ['resolved', 'rejected', 'citizen_rejected'].includes(c.status)).length,
+    all: complaintsArray.length,
+    active: complaintsArray.filter((c) => ['pending', 'assigned', 'in_progress'].includes(c.status)).length,
+    resolved: complaintsArray.filter((c) => ['resolved', 'rejected', 'citizen_rejected'].includes(c.status)).length,
   };
 
   return (
@@ -64,7 +63,12 @@ export default function MyComplaintsPage() {
 
       {/* Content */}
       <div className="p-4 space-y-3">
-        {filteredComplaints.length > 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+            <p className="text-sm text-muted-foreground">Loading your complaints...</p>
+          </div>
+        ) : Array.isArray(filteredComplaints) && filteredComplaints.length > 0 ? (
           filteredComplaints.map((complaint) => (
             <Link key={complaint.id} to={`/citizen/complaints/${complaint.id}`}>
               <Card className="overflow-hidden hover:shadow-md transition-shadow">
@@ -129,8 +133,8 @@ export default function MyComplaintsPage() {
               {activeTab === 'active'
                 ? 'No active complaints at the moment'
                 : activeTab === 'resolved'
-                ? 'No resolved complaints yet'
-                : 'You haven\'t submitted any complaints yet'}
+                  ? 'No resolved complaints yet'
+                  : 'You haven\'t submitted any complaints yet'}
             </p>
           </div>
         )}

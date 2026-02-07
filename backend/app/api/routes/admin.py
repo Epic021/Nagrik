@@ -131,6 +131,20 @@ async def register_admin(
     }
 
 
+@router.get("/departments")
+async def get_all_departments(admin: dict = Depends(get_admin_user)):
+    """List all available departments."""
+    from ..models.departments import DELHI_DEPARTMENTS
+    return [
+        {
+            "id": d.id,
+            "name": d.name,
+            "short_name": d.short_name
+        }
+        for d in DELHI_DEPARTMENTS
+    ]
+
+
 # ============ Department Complaints ============
 
 @router.get("/complaints")
@@ -330,8 +344,15 @@ async def resolve_complaint(
     
     # Check department access
     if admin.get("role") != "super_admin":
-        if doc.get("department", {}).get("id") != admin.get("department_id"):
-            raise HTTPException(status_code=403, detail="Not your department's complaint")
+        admin_dept = admin.get("department_id")
+        comp_dept = doc.get("department", {}).get("id")
+        print(f"[RESOLVE] Admin Dept: {admin_dept}, Complaint Dept: {comp_dept}")
+        
+        if comp_dept != admin_dept:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail=f"Not your department's complaint. Admin Dept: {admin_dept}, Complaint Dept: {comp_dept}"
+            )
     
     now = datetime.now(timezone.utc)
     
@@ -607,8 +628,17 @@ async def get_dashboard_stats(
         if (verified_positive + verified_negative) > 0 else 0, 1
     )
     
+    # Get department name
+    department_name = "All Departments"
+    if admin.get("role") != "super_admin" and admin.get("department_id"):
+        from ..models.departments import get_department_by_id
+        dept = get_department_by_id(admin["department_id"])
+        if dept:
+            department_name = dept.name
+    
     return {
         "department_id": admin.get("department_id"),
+        "department_name": department_name,
         "summary": {
             "total_complaints": total,
             "today_new": today_new,

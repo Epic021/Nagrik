@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Camera, Upload, MapPin, Sparkles, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,9 +9,16 @@ import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
-import { CATEGORIES, DEPARTMENTS } from '@/data/mockData';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import {
+  useCategories,
+  useSubmitComplaint,
+  useClassifyImage,
+  useClassifyText,
+  useUploadFile,
+  useGeocode,
+} from '@/hooks/use-complaints';
 
 type Step = 'media' | 'classify' | 'location' | 'confirm';
 
@@ -24,8 +31,16 @@ const steps: { id: Step; label: string }[] = [
 
 export default function SubmitComplaintPage() {
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [currentStep, setCurrentStep] = useState<Step>('media');
-  const [isClassifying, setIsClassifying] = useState(false);
+
+  const { data: categories = [], isLoading: isLoadingCategories } = useCategories();
+  const submitComplaint = useSubmitComplaint();
+  const classifyImage = useClassifyImage();
+  const classifyText = useClassifyText();
+  const uploadFile = useUploadFile();
+  const geocode = useGeocode();
+
   const [formData, setFormData] = useState({
     imageUrl: '',
     title: '',
@@ -33,10 +48,10 @@ export default function SubmitComplaintPage() {
     category_id: '',
     suggestedCategory: '',
     confidence: 0,
-    urgency: 'normal',
+    urgency: 'normal' as const,
     location: {
-      lat: 28.6139,
-      lng: 77.2090,
+      lat: 0,
+      lng: 0,
       address: '',
     },
   });
@@ -44,64 +59,154 @@ export default function SubmitComplaintPage() {
   const currentStepIndex = steps.findIndex((s) => s.id === currentStep);
   const progress = ((currentStepIndex + 1) / steps.length) * 100;
 
-  const handleImageUpload = () => {
-    // Simulated image upload
-    setFormData((prev) => ({
-      ...prev,
-      imageUrl: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=400',
-    }));
-    toast.success('Image uploaded');
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const result = await uploadFile.mutateAsync(file);
+      setFormData((prev) => ({
+        ...prev,
+        imageUrl: result.url,
+      }));
+      toast.success('Image uploaded');
+    } catch (error) {
+      // Error handled by interceptor
+    }
   };
 
   const handleAIClassify = async () => {
-    setIsClassifying(true);
-    // Simulate AI classification
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    setFormData((prev) => ({
-      ...prev,
-      suggestedCategory: 'potholes',
-      category_id: 'potholes',
-      confidence: 0.92,
-      urgency: 'high',
-    }));
-    setIsClassifying(false);
-    toast.success('AI classification complete');
+    try {
+      let result;
+      if (formData.imageUrl) {
+        result = await classifyImage.mutateAsync({
+          image_url: formData.imageUrl,
+          description: formData.description,
+        });
+      } else {
+        result = await classifyText.mutateAsync({
+          title: formData.title,
+          description: formData.description,
+        });
+      }
+
+      if (result.success) {
+        setFormData((prev) => ({
+          ...prev,
+          suggestedCategory: result.category_id,
+          category_id: result.category_id,
+          confidence: result.confidence,
+          urgency: result.suggested_urgency || prev.urgency,
+        }));
+
+        // If AI found a location, update matching fields
+        if (result.location && result.location.has_location) {
+          const detectedAddress = result.location.address || result.location.locality;
+          if (detectedAddress) {
+            setFormData((prev) => ({
+              ...prev,
+              location: {
+                ...prev.location,
+                address: detectedAddress,
+              }
+            }));
+
+            // Trigger geocoding for the detected address
+            try {
+              const geoResult = await geocode.mutateAsync(detectedAddress);
+              setFormData((prev) => ({
+                ...prev,
+                location: {
+                  ...prev.location,
+                  lat: geoResult.lat,
+                  lng: geoResult.lng,
+                }
+              }));
+              toast.success(`Location detected: ${detectedAddress}`);
+            } catch (e) {
+              console.error('Auto-geocoding failed', e);
+            }
+          }
+        }
+
+        toast.success('AI classification complete');
+      } else {
+        toast.error(result.message || 'AI could not classify this issue');
+      }
+    } catch (error) {
+      // Error handled by interceptor
+    }
+  };
+
+  const handleGeocode = async () => {
+    if (!formData.location.address || formData.location.address === 'Detected Location') return;
+
+    try {
+      const result = await geocode.mutateAsync(formData.location.address);
+      setFormData((prev) => ({
+        ...prev,
+        location: {
+          ...prev.location,
+          lat: result.lat,
+          lng: result.lng,
+        },
+      }));
+      toast.success('Address geocoded successfully');
+    } catch (error) {
+      toast.error('Could not find coordinates for this address');
+    }
   };
 
   const handleGetLocation = () => {
     if (navigator.geolocation) {
+      toast.info('Detecting location...');
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setFormData((prev) => ({
             ...prev,
             location: {
+              ...prev.location,
               lat: position.coords.latitude,
               lng: position.coords.longitude,
-              address: 'MG Road, Near Metro Station, Central Delhi',
+              address: prev.location.address || 'Detected Location',
             },
           }));
-          toast.success('Location detected');
+          toast.success('Coordinates detected');
         },
-        () => {
-          toast.error('Could not get location');
+        (error) => {
+          console.error('Geolocation error:', error);
+          toast.error('Could not get location. Please ensure location services are enabled.');
         }
       );
+    } else {
+      toast.error('Geolocation is not supported by your browser');
     }
   };
 
-  const handleSubmit = () => {
-    toast.success('Complaint submitted successfully!');
-    navigate('/citizen/my-complaints');
+  const handleSubmit = async () => {
+    try {
+      await submitComplaint.mutateAsync({
+        title: formData.title,
+        description: formData.description,
+        category_id: formData.category_id,
+        location: formData.location,
+        media_urls: formData.imageUrl ? [formData.imageUrl] : [],
+        urgency: formData.urgency,
+      });
+      navigate('/citizen/my-complaints');
+    } catch (error) {
+      // Error handled by interceptor
+    }
   };
 
   const canProceed = () => {
     switch (currentStep) {
       case 'media':
-        return formData.title && formData.description;
+        return formData.title.length >= 5 && formData.description.length >= 10;
       case 'classify':
         return formData.category_id;
       case 'location':
-        return formData.location.address;
+        return formData.location.address && formData.location.lat !== 0;
       case 'confirm':
         return true;
       default:
@@ -125,8 +230,20 @@ export default function SubmitComplaintPage() {
     }
   };
 
+  const isClassifying = classifyImage.isPending || classifyText.isPending;
+  const isUploading = uploadFile.isPending;
+  const isSubmitting = submitComplaint.isPending;
+
   return (
     <div className="min-h-full bg-background flex flex-col">
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        accept="image/*"
+        onChange={handleFileChange}
+      />
+
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background border-b border-border">
         <div className="flex items-center gap-3 px-4 py-3">
@@ -157,8 +274,8 @@ export default function SubmitComplaintPage() {
                 index < currentStepIndex
                   ? "bg-primary text-primary-foreground"
                   : index === currentStepIndex
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground"
               )}
             >
               {index < currentStepIndex ? <Check className="h-3 w-3" /> : index + 1}
@@ -181,7 +298,11 @@ export default function SubmitComplaintPage() {
                 <CardTitle className="text-sm">Upload Photo</CardTitle>
               </CardHeader>
               <CardContent>
-                {formData.imageUrl ? (
+                {isUploading ? (
+                  <div className="h-48 flex items-center justify-center border-2 border-dashed rounded-lg">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : formData.imageUrl ? (
                   <div className="relative">
                     <img
                       src={formData.imageUrl}
@@ -199,11 +320,19 @@ export default function SubmitComplaintPage() {
                   </div>
                 ) : (
                   <div className="flex gap-3">
-                    <Button variant="outline" className="flex-1 h-24 flex-col" onClick={handleImageUpload}>
+                    <Button
+                      variant="outline"
+                      className="flex-1 h-24 flex-col"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <Camera className="h-6 w-6 mb-2" />
                       <span className="text-xs">Take Photo</span>
                     </Button>
-                    <Button variant="outline" className="flex-1 h-24 flex-col" onClick={handleImageUpload}>
+                    <Button
+                      variant="outline"
+                      className="flex-1 h-24 flex-col"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <Upload className="h-6 w-6 mb-2" />
                       <span className="text-xs">Upload</span>
                     </Button>
@@ -226,6 +355,9 @@ export default function SubmitComplaintPage() {
                     value={formData.title}
                     onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
                   />
+                  {formData.title && formData.title.length < 5 && (
+                    <p className="text-[10px] text-destructive">Title must be at least 5 characters</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="description">Description *</Label>
@@ -236,6 +368,9 @@ export default function SubmitComplaintPage() {
                     value={formData.description}
                     onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                   />
+                  {formData.description && formData.description.length < 10 && (
+                    <p className="text-[10px] text-destructive">Description must be at least 10 characters</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -258,12 +393,12 @@ export default function SubmitComplaintPage() {
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-medium">Suggested Category</span>
                       <Badge variant="secondary">
-                        {Math.round(formData.confidence * 100)}% confident
+                        {Math.round((formData.confidence || 0) * 100)}% confident
                       </Badge>
                     </div>
                     <Badge className="text-sm">
-                      {CATEGORIES.find((c) => c.id === formData.suggestedCategory)?.icon}{' '}
-                      {CATEGORIES.find((c) => c.id === formData.suggestedCategory)?.name}
+                      {Array.isArray(categories) && categories.find((c) => c.id === formData.suggestedCategory)?.icon}{' '}
+                      {Array.isArray(categories) && categories.find((c) => c.id === formData.suggestedCategory)?.name}
                     </Badge>
                   </div>
                 ) : (
@@ -294,19 +429,25 @@ export default function SubmitComplaintPage() {
                 <CardTitle className="text-sm">Select Category</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 gap-2">
-                  {CATEGORIES.map((category) => (
-                    <Button
-                      key={category.id}
-                      variant={formData.category_id === category.id ? 'default' : 'outline'}
-                      className="h-auto py-3 flex-col"
-                      onClick={() => setFormData((prev) => ({ ...prev, category_id: category.id }))}
-                    >
-                      <span className="text-xl mb-1">{category.icon}</span>
-                      <span className="text-xs">{category.name}</span>
-                    </Button>
-                  ))}
-                </div>
+                {isLoadingCategories ? (
+                  <div className="flex justify-center p-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Array.isArray(categories) && categories.map((category) => (
+                      <Button
+                        key={category.id}
+                        variant={formData.category_id === category.id ? 'default' : 'outline'}
+                        className="h-auto py-3 flex-col"
+                        onClick={() => setFormData((prev) => ({ ...prev, category_id: category.id }))}
+                      >
+                        <span className="text-xl mb-1">{category.icon}</span>
+                        <span className="text-xs">{category.name}</span>
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -318,7 +459,7 @@ export default function SubmitComplaintPage() {
               <CardContent>
                 <Select
                   value={formData.urgency}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, urgency: value }))}
+                  onValueChange={(value: any) => setFormData((prev) => ({ ...prev, urgency: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -369,7 +510,11 @@ export default function SubmitComplaintPage() {
                         location: { ...prev.location, address: e.target.value },
                       }))
                     }
+                    onBlur={handleGeocode}
                   />
+                  <p className="text-[10px] text-muted-foreground italic">
+                    Tip: We'll try to find the coordinates automatically when you finish typing.
+                  </p>
                 </div>
 
                 {/* Map Preview Placeholder */}
@@ -413,10 +558,10 @@ export default function SubmitComplaintPage() {
                   </div>
                   <div className="flex gap-2">
                     <Badge>
-                      {CATEGORIES.find((c) => c.id === formData.category_id)?.icon}{' '}
-                      {CATEGORIES.find((c) => c.id === formData.category_id)?.name}
+                      {Array.isArray(categories) && categories.find((c) => c.id === formData.category_id)?.icon}{' '}
+                      {Array.isArray(categories) && categories.find((c) => c.id === formData.category_id)?.name}
                     </Badge>
-                    <Badge variant="outline" className="capitalize">{formData.urgency}</Badge>
+                    <Badge variant="outline" className="capitalize">{formData.urgency || 'normal'}</Badge>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Location</Label>
@@ -444,8 +589,20 @@ export default function SubmitComplaintPage() {
       {/* Footer */}
       <div className="sticky bottom-0 bg-background border-t border-border p-4 safe-area-bottom">
         {currentStep === 'confirm' ? (
-          <Button className="w-full" size="lg" onClick={handleSubmit}>
-            Submit Complaint
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              'Submit Complaint'
+            )}
           </Button>
         ) : (
           <Button

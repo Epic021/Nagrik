@@ -9,6 +9,8 @@ from ..models.complaints import (
 )
 from ..models.departments import get_category_by_id, get_department_by_id
 from .deduplication import find_duplicate_complaint, merge_into_existing
+from .google_services import geocode_address
+from .gemini_ai import extract_location_from_text
 
 
 async def create_complaint(
@@ -51,14 +53,41 @@ async def create_complaint(
         raise ValueError(f"Department not found for category: {complaint_data.category_id}")
     
     now = datetime.now(timezone.utc)
-    geo_location = complaint_data.location.to_geojson()
+    
+    # Automated Geocoding if coordinates are missing/zero
+    location_data = complaint_data.location
+    if (location_data.lat == 0 and location_data.lng == 0):
+        # Use existing address if available
+        query = location_data.address
+        
+        # If no address, try to extract from title + description using Gemini
+        if not query:
+            print(f"[GEO] Using Gemini to extract location from text...")
+            extracted = await extract_location_from_text(f"{complaint_data.title} {complaint_data.description}")
+            if extracted and extracted.get("has_location"):
+                query = extracted.get("address") or extracted.get("locality")
+                if query:
+                    location_data.address = query
+                    print(f"[GEO] Gemini extracted: {query}")
+        
+        if query:
+            # Add context for better geocoding if it's a short query
+            geocode_query = query if "Delhi" in query else f"{query} Delhi"
+            print(f"[GEO] Attempting background geocoding for: {geocode_query}")
+            geo_result = await geocode_address(geocode_query)
+            if geo_result:
+                location_data.lat = geo_result["lat"]
+                location_data.lng = geo_result["lng"]
+                print(f"[GEO] Success: {location_data.lat}, {location_data.lng}")
+    
+    geo_location = location_data.to_geojson()
     
     complaint_doc = {
         "title": complaint_data.title,
         "description": complaint_data.description,
         "category": {"id": category.id, "name": category.name},
         "department": {"id": department.id, "name": department.name, "short_name": department.short_name},
-        "location": complaint_data.location.model_dump(),
+        "location": location_data.model_dump(),
         "geo_location": geo_location.model_dump(),
         "media_urls": complaint_data.media_urls,
         "urgency": complaint_data.urgency.value,

@@ -24,7 +24,7 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, className, size = 'default' }: StatusBadgeProps) {
-  const config = STATUS_CONFIG[status];
+  const config = STATUS_CONFIG[status] || { label: status, className: 'bg-muted text-muted-foreground' };
   const sizeClasses = size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : '';
   return (
     <span className={cn('status-badge', config.className, sizeClasses, className)}>

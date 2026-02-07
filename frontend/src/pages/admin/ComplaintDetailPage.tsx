@@ -13,9 +13,10 @@ import {
   ArrowUpRight,
   MessageSquare,
   Image as ImageIcon,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,9 +37,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StatusBadge, UrgencyBadge } from '@/components/StatusBadge';
-import { MOCK_COMPLAINTS, MOCK_COMPLAINT_HISTORY } from '@/data/mockData';
+import { useComplaintDetail } from '@/hooks/use-complaints';
+import { useAssignComplaint, useResolveComplaint, useUpdateComplaintStatus } from '@/hooks/use-admin';
 import { format } from 'date-fns';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 export default function ComplaintDetailPage() {
   const { id } = useParams();
@@ -46,7 +49,55 @@ export default function ComplaintDetailPage() {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
 
-  const complaint = MOCK_COMPLAINTS.find((c) => c.id === id);
+  // Form states
+  const [staffName, setStaffName] = useState('');
+  const [staffPhone, setStaffPhone] = useState('');
+  const [priority, setPriority] = useState('normal');
+  const [resNotes, setResNotes] = useState('');
+  const [resBy, setResBy] = useState('');
+
+  const { data: complaint, isLoading } = useComplaintDetail(id);
+  const assignMutation = useAssignComplaint();
+  const resolveMutation = useResolveComplaint();
+  const statusMutation = useUpdateComplaintStatus();
+
+  const handleAssign = () => {
+    if (!id || !staffName) return;
+    assignMutation.mutate({
+      complaintId: id,
+      assignedToName: staffName,
+      assignedToPhone: staffPhone,
+      priority
+    }, {
+      onSuccess: () => setAssignDialogOpen(false)
+    });
+  };
+
+  const handleResolve = () => {
+    if (!id || !resNotes) return;
+    resolveMutation.mutate({
+      complaintId: id,
+      resolutionNotes: resNotes
+    }, {
+      onSuccess: () => {
+        setResolveDialogOpen(false);
+        setResNotes('');
+      },
+      onError: (error: any) => {
+        const detail = error.response?.data?.detail;
+        toast.error(detail || 'Failed to resolve complaint');
+      }
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px]">
+        <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+        <p className="text-muted-foreground">Loading complaint details...</p>
+      </div>
+    );
+  }
 
   if (!complaint) {
     return (
@@ -96,7 +147,7 @@ export default function ComplaintDetailPage() {
       <div className="flex flex-wrap gap-2">
         <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline">
+            <Button variant="outline" disabled={complaint.status === 'resolved'}>
               <UserPlus className="mr-2 h-4 w-4" />
               Assign Staff
             </Button>
@@ -111,15 +162,25 @@ export default function ComplaintDetailPage() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="staff-name">Staff Name</Label>
-                <Input id="staff-name" placeholder="Enter staff name" />
+                <Input
+                  id="staff-name"
+                  placeholder="Enter staff name"
+                  value={staffName}
+                  onChange={(e) => setStaffName(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="staff-phone">Phone Number</Label>
-                <Input id="staff-phone" placeholder="Enter phone number" />
+                <Input
+                  id="staff-phone"
+                  placeholder="Enter phone number"
+                  value={staffPhone}
+                  onChange={(e) => setStaffPhone(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="priority">Priority</Label>
-                <Select defaultValue="normal">
+                <Select value={priority} onValueChange={setPriority}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -136,8 +197,8 @@ export default function ComplaintDetailPage() {
               <Button variant="outline" onClick={() => setAssignDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => setAssignDialogOpen(false)}>
-                Assign
+              <Button onClick={handleAssign} disabled={assignMutation.isPending}>
+                {assignMutation.isPending ? 'Assigning...' : 'Assign'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -145,7 +206,7 @@ export default function ComplaintDetailPage() {
 
         <Dialog open={resolveDialogOpen} onOpenChange={setResolveDialogOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline">
+            <Button variant="outline" disabled={complaint.status === 'resolved'}>
               <CheckCircle className="mr-2 h-4 w-4" />
               Mark Resolved
             </Button>
@@ -164,30 +225,48 @@ export default function ComplaintDetailPage() {
                   id="resolution-notes"
                   placeholder="Describe the resolution..."
                   rows={4}
+                  value={resNotes}
+                  onChange={(e) => setResNotes(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="resolved-by">Resolved By</Label>
-                <Input id="resolved-by" placeholder="Enter name or team" />
+                <Input
+                  id="resolved-by"
+                  placeholder="Enter name or team"
+                  value={resBy}
+                  onChange={(e) => setResBy(e.target.value)}
+                />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setResolveDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button onClick={() => setResolveDialogOpen(false)}>
-                Resolve
+              <Button onClick={handleResolve} disabled={resolveMutation.isPending}>
+                {resolveMutation.isPending ? 'Resolving...' : 'Resolve'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        <Button variant="outline">
+        <Button
+          variant="outline"
+          onClick={() => toast.info('Escalation flow coming soon')}
+        >
           <ArrowUpRight className="mr-2 h-4 w-4" />
           Escalate
         </Button>
 
-        <Button variant="outline" className="text-destructive hover:text-destructive">
+        <Button
+          variant="outline"
+          className="text-destructive hover:text-destructive"
+          onClick={() => {
+            if (confirm('Are you sure you want to reject this complaint?')) {
+              statusMutation.mutate({ complaintId: id!, status: 'rejected' });
+            }
+          }}
+        >
           <XCircle className="mr-2 h-4 w-4" />
           Reject
         </Button>
@@ -210,7 +289,7 @@ export default function ComplaintDetailPage() {
           </Card>
 
           {/* Media */}
-          {complaint.media_urls.length > 0 && (
+          {complaint.media_urls && complaint.media_urls.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -220,7 +299,7 @@ export default function ComplaintDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {complaint.media_urls.map((url, index) => (
+                  {Array.isArray(complaint.media_urls) && complaint.media_urls.map((url, index) => (
                     <img
                       key={index}
                       src={url}
@@ -256,44 +335,46 @@ export default function ComplaintDetailPage() {
           </Card>
 
           {/* History Timeline */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Activity Timeline
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {MOCK_COMPLAINT_HISTORY.map((item, index) => (
-                  <div key={index} className="flex gap-4">
-                    <div className="relative">
-                      <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <MessageSquare className="h-4 w-4 text-primary" />
+          {complaint.history && complaint.history.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Activity Timeline
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {Array.isArray(complaint.history) && complaint.history.map((item, index) => (
+                    <div key={index} className="flex gap-4">
+                      <div className="relative">
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                          <MessageSquare className="h-4 w-4 text-primary" />
+                        </div>
+                        {index !== (complaint.history?.length || 0) - 1 && (
+                          <div className="absolute top-8 left-1/2 -translate-x-1/2 w-0.5 h-full bg-border" />
+                        )}
                       </div>
-                      {index !== MOCK_COMPLAINT_HISTORY.length - 1 && (
-                        <div className="absolute top-8 left-1/2 -translate-x-1/2 w-0.5 h-full bg-border" />
-                      )}
-                    </div>
-                    <div className="flex-1 pb-4">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="font-medium capitalize">
-                          {item.action.replace('_', ' ')}
+                      <div className="flex-1 pb-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="font-medium capitalize">
+                            {item.action?.replace('_', ' ') || 'Action'}
+                          </p>
+                          <span className="text-sm text-muted-foreground">
+                            {item.created_at ? format(new Date(item.created_at), 'MMM d, h:mm a') : 'Unknown'}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{item.notes}</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          by {item.by?.name || 'Unknown'}
                         </p>
-                        <span className="text-sm text-muted-foreground">
-                          {format(new Date(item.created_at), 'MMM d, h:mm a')}
-                        </span>
                       </div>
-                      <p className="text-sm text-muted-foreground">{item.notes}</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        by {item.by.name}
-                      </p>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -319,7 +400,7 @@ export default function ComplaintDetailPage() {
                 <span className="text-sm text-muted-foreground">Upvotes</span>
                 <span className="flex items-center gap-1 font-medium">
                   <ThumbsUp className="h-4 w-4" />
-                  {complaint.upvotes}
+                  {complaint.upvote_count || 0}
                 </span>
               </div>
             </CardContent>
@@ -336,10 +417,10 @@ export default function ComplaintDetailPage() {
                   <User className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium">{complaint.created_by.name}</p>
+                  <p className="font-medium">{complaint.created_by?.name || 'Anonymous'}</p>
                   <p className="text-sm text-muted-foreground flex items-center gap-1">
                     <Phone className="h-3 w-3" />
-                    {complaint.created_by.phone}
+                    {complaint.created_by?.phone}
                   </p>
                 </div>
               </div>
@@ -347,7 +428,7 @@ export default function ComplaintDetailPage() {
           </Card>
 
           {/* Assignment Info */}
-          {complaint.assigned_to_name && (
+          {complaint.assigned_to && (
             <Card>
               <CardHeader>
                 <CardTitle>Assigned To</CardTitle>
@@ -358,10 +439,10 @@ export default function ComplaintDetailPage() {
                     <User className="h-5 w-5 text-accent" />
                   </div>
                   <div>
-                    <p className="font-medium">{complaint.assigned_to_name}</p>
+                    <p className="font-medium">{complaint.assigned_to.name}</p>
                     <p className="text-sm text-muted-foreground flex items-center gap-1">
                       <Phone className="h-3 w-3" />
-                      {complaint.assigned_to_phone}
+                      {complaint.assigned_to.phone}
                     </p>
                   </div>
                 </div>
@@ -370,7 +451,7 @@ export default function ComplaintDetailPage() {
           )}
 
           {/* Resolution Info */}
-          {complaint.resolved_at && (
+          {complaint.status === 'resolved' && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -382,9 +463,11 @@ export default function ComplaintDetailPage() {
                 <p className="text-sm text-muted-foreground">
                   {complaint.resolution_notes}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  Resolved on {format(new Date(complaint.resolved_at), 'MMM d, yyyy')}
-                </p>
+                {complaint.resolved_at && (
+                  <p className="text-sm text-muted-foreground">
+                    Resolved on {format(new Date(complaint.resolved_at), 'MMM d, yyyy')}
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
