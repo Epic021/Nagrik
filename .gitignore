@@ -75,3 +75,5 @@ secrets*.json
 
 # OS
 Thumbs.db
+node_modules/
+auth/

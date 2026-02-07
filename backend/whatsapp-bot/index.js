@@ -52,7 +52,7 @@ async function connectWhatsApp() {
         const { connection, lastDisconnect, qr } = update
 
         if (qr) {
-            console.log('\n📱 QR code received, scan it with your phone:\n')
+            console.log('\n[QR] QR code received, scan it with your phone:\n')
             qrcode.generate(qr, { small: true })
         }
 
@@ -61,15 +61,15 @@ async function connectWhatsApp() {
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut
 
             if (statusCode === 440) {
-                console.log('⚠️ Session conflict. Waiting 5s...')
+                console.log('[WARN] Session conflict. Waiting 5s...')
                 setTimeout(() => connectWhatsApp(), 5000)
             } else if (shouldReconnect) {
                 connectWhatsApp()
             } else {
-                console.log('❌ Logged out.')
+                console.log('[INFO] Logged out.')
             }
         } else if (connection === 'open') {
-            console.log('✅ Bot ready! Send "START" to begin, "STOP" to end.')
+            console.log('[OK] Bot ready! Send "START" to begin, "STOP" to end.')
         }
     })
 
@@ -101,13 +101,13 @@ async function handleMessage(msg) {
     const userId = msg.key.remoteJid
     const text = getMessageContent(msg.message)?.trim().toUpperCase()
 
-    console.log(`📩 ${userId}: "${text || '[media]'}"`)
+    console.log(`[MSG] ${userId}: "${text || '[media]'}"`)
 
     // Handle START command
     if (text === 'START') {
         activeSessions.add(userId)
-        console.log(`🟢 Session started for ${userId}`)
-        await sendReply(userId, '🤖 *NAGRIK Complaint Registration Bot*\n\nHello! I am here to help you register your complaint.\n\nPlease describe your issue. You can also send images if needed.\n\nType *STOP* anytime to end the conversation.')
+        console.log(`[SESSION] Session started for ${userId}`)
+        await sendReply(userId, '*NAGRIK Complaint Registration Bot*\n\nHello! I am here to help you register your complaint.\n\nPlease describe your issue. You can also send images if needed.\n\nType *STOP* anytime to end the conversation.')
         return
     }
 
@@ -119,8 +119,8 @@ async function handleMessage(msg) {
             try {
                 await axios.post(`${API_URL}/clear`, { user_id: userId })
             } catch (e) { }
-            console.log(`🔴 Session ended for ${userId}`)
-            await sendReply(userId, '👋 Thank you for using NAGRIK. Your session has ended.\n\nType *START* to begin a new complaint.')
+            console.log(`[SESSION] Session ended for ${userId}`)
+            await sendReply(userId, 'Thank you for using NAGRIK. Your session has ended.\n\nType *START* to begin a new complaint.')
         }
         return
     }
@@ -138,13 +138,13 @@ async function handleMessage(msg) {
 
         // Check for image
         if (msg.message?.imageMessage) {
-            console.log('📷 Downloading image...')
+            console.log('[MEDIA] Downloading image...')
             const buffer = await downloadMediaMessage(msg, 'buffer', {})
             imageBase64 = buffer.toString('base64')
         }
 
         // Send to NAGRIK API
-        console.log('🤖 Sending to NAGRIK API...')
+        console.log('[API] Sending to NAGRIK API...')
         const response = await axios.post(`${API_URL}/chat`, {
             user_id: userId,
             message: messageText,
@@ -153,14 +153,14 @@ async function handleMessage(msg) {
 
         if (response.data.success) {
             await sendReply(userId, response.data.response)
-            console.log('✅ Reply sent')
+            console.log('[OK] Reply sent')
         } else {
-            await sendReply(userId, '❌ Sorry, I encountered an error. Please try again.')
+            await sendReply(userId, '[ERROR] Sorry, I encountered an error. Please try again.')
         }
 
     } catch (error) {
-        console.error('❌ API error:', error.message)
-        await sendReply(userId, '❌ Service temporarily unavailable. Please try again later.')
+        console.error('[ERROR] API error:', error.message)
+        await sendReply(userId, '[ERROR] Service temporarily unavailable. Please try again later.')
     }
 }
 
@@ -168,7 +168,7 @@ async function sendReply(jid, text) {
     try {
         await sock.sendMessage(jid, { text })
     } catch (e) {
-        console.error('Failed to send:', e.message)
+        console.error('[FAIL] Failed to send:', e.message)
     }
 }
 
@@ -182,6 +182,6 @@ function getMessageContent(message) {
     )
 }
 
-console.log('🚀 Starting NAGRIK WhatsApp Bot...')
-console.log(`📡 API URL: ${API_URL}`)
+console.log('[START] Starting NAGRIK WhatsApp Bot...')
+console.log(`[CONFIG] API URL: ${API_URL}`)
 connectWhatsApp()
