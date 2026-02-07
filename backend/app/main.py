@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.core.config import get_settings
 from .api.core.database import connect_db, close_db, get_db
-from .api.routes import auth, complaints, categories, leaderboards, files, ai, geo, classify, admin
+from .api.routes import auth, complaints, categories, leaderboards, files, ai, geo, classify, admin, whatsapp
 
 settings = get_settings()
 
@@ -81,6 +81,7 @@ app.include_router(ai.router, prefix=settings.API_V1_PREFIX)
 app.include_router(geo.router, prefix=settings.API_V1_PREFIX)
 app.include_router(classify.router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin.router, prefix=settings.API_V1_PREFIX)
+app.include_router(whatsapp.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")
