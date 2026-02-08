@@ -282,20 +282,37 @@ def _doc_to_response(doc: dict, user_id: Optional[str] = None) -> ComplaintRespo
     """Convert MongoDB document to response model."""
     from ..models.complaints import Location, Urgency
     
+    # Handle location field name differences (lat/lng vs latitude/longitude)
+    loc_data = doc.get("location", {})
+    if loc_data:
+        if "lat" not in loc_data and "latitude" in loc_data:
+            loc_data = {
+                "lat": loc_data["latitude"],
+                "lng": loc_data["longitude"],
+                "address": loc_data.get("address")
+            }
+    else:
+        loc_data = {"lat": 0, "lng": 0}
+    
+    # Handle missing created_by
+    created_by_data = doc.get("created_by")
+    if not created_by_data:
+        created_by_data = {"id": "unknown", "name": "Anonymous"}
+    
     return ComplaintResponse(
         id=str(doc["_id"]),
-        title=doc["title"],
-        description=doc["description"],
-        category=CategoryRef(**doc["category"]),
-        department=DepartmentRef(**doc["department"]),
-        location=Location(**doc["location"]),
+        title=doc.get("title", ""),
+        description=doc.get("description", ""),
+        category=CategoryRef(**doc.get("category", {"id": "unknown", "name": "Unknown"})),
+        department=DepartmentRef(**doc.get("department", {"id": "unknown", "name": "Unknown"})),
+        location=Location(**loc_data),
         media_urls=doc.get("media_urls", []),
-        urgency=Urgency(doc["urgency"]),
-        status=ComplaintStatus(doc["status"]),
+        urgency=Urgency(doc.get("urgency", "normal")),
+        status=ComplaintStatus(doc.get("status", "pending")),
         upvote_count=doc.get("upvote_count", 0),
         has_upvoted=user_id in doc.get("upvoters", []) if user_id else False,
-        created_by=UserRef(**doc["created_by"]),
-        created_at=doc["created_at"],
+        created_by=UserRef(**created_by_data),
+        created_at=doc.get("created_at"),
         resolved_at=doc.get("resolved_at"),
         citizen_verified=doc.get("citizen_verified")
     )
