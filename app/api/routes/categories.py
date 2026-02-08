@@ -29,25 +29,18 @@ async def list_departments():
     db = get_db()
     departments = await db.departments.find({}).to_list(length=100)
     
-    result = []
-    for dept in departments:
-        dept_id = str(dept["_id"])
-        
-        # Get categories for this department
-        cats = await db.categories.find({"default_department_id": dept["_id"]}).to_list(length=50)
-        category_names = [cat["name"] for cat in cats]
-        
-        result.append({
-            "id": dept_id,
+    return [
+        {
+            "id": str(dept["_id"]),
             "name": dept.get("full_name", dept.get("name", "Unknown")),
             "short_name": dept.get("name", dept.get("short_name", "?")),
             "description": dept.get("description", ""),
-            "categories": category_names,
+            "categories": [],  # Simplified - don't fetch categories for each dept
             "contact_email": dept.get("contact", {}).get("email"),
             "website": dept.get("website")
-        })
-    
-    return result
+        }
+        for dept in departments
+    ]
 
 
 @router.get("/departments/{dept_id}")
@@ -65,16 +58,12 @@ async def get_department(dept_id: str):
     if not dept:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
     
-    # Get categories for this department
-    cats = await db.categories.find({"default_department_id": dept["_id"]}).to_list(length=50)
-    category_names = [cat["name"] for cat in cats]
-    
     return {
         "id": str(dept["_id"]),
         "name": dept.get("full_name", dept.get("name", "Unknown")),
         "short_name": dept.get("name", dept.get("short_name", "?")),
         "description": dept.get("description", ""),
-        "categories": category_names,
+        "categories": [],  # Simplified
         "contact_email": dept.get("contact", {}).get("email"),
         "website": dept.get("website")
     }
